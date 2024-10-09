@@ -63,14 +63,19 @@ class BaseDatasetPreparer(ABC):
                 self.preprocessed_ratings_df = self.preprocessed_ratings_df.sort_values(by=[self.user_col])
             self.preprocessed_ratings_df = self.preprocessed_ratings_df.groupby(self.user_col).head(max_seq_len)
             
-    def train_test_split(self, method='timestamp', test_size=0.2):
-        """Split data into train and test using the selected method."""
-        if method == 'timestamp':
-            return self._train_test_split_by_timestamp(test_size)
-        elif method == 'user':
-            return self._train_test_split_by_user(test_size)
-        else:
-            raise ValueError("Unknown method for train_test_split. Choose 'timestamp' or 'user'.")
+    def _train_test_split_by_timestamp(self, test_size):
+        """Split by timestamp: oldest data is for training, newest data is for testing."""
+        ratings_df = self.ratings_df if self.preprocessed_ratings_df is None else self.preprocessed_ratings_df
+        ratings_df = ratings_df.sort_values(by=self.timestamp_col)
+        train_df, test_df = train_test_split(ratings_df, test_size=test_size, shuffle=False, stratify=None)
+        train_users = train_df[self.user_col].unique()
+        train_items = train_df[self.item_col].unique()
+
+        test_df = test_df[
+            test_df[self.user_col].isin(train_users) &
+            test_df[self.item_col].isin(train_items)
+        ]
+        return train_df, test_df
     
     def _train_test_split_by_timestamp(self, test_size):
         """Split by timestamp: oldest data is for training, newest data is for testing."""
