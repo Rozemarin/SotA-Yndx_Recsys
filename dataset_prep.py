@@ -10,7 +10,8 @@ from abc import ABC, abstractmethod
 
 
 class BaseDatasetPreparer(ABC):
-    def __init__(self, ratings_df=None, users_df=None, items_df=None, user_col='user_id', item_col='item_id', rating_col='rating', timestamp_col='timestamp'):
+    def __init__(self, ratings_df=None, users_df=None, items_df=None, 
+                 user_col='user_id', item_col='item_id', rating_col='rating', timestamp_col='timestamp'):
         self.ratings_df = ratings_df
         self.users_df = users_df
         self.items_df = items_df
@@ -63,24 +64,24 @@ class BaseDatasetPreparer(ABC):
                 self.preprocessed_ratings_df = self.preprocessed_ratings_df.sort_values(by=[self.user_col])
             self.preprocessed_ratings_df = self.preprocessed_ratings_df.groupby(self.user_col).head(max_seq_len)
 
-    def train_test_split(self, method='timestamp', train_val_test_ratio=[0.7, 0.2, 0.1]):
+    def train_test_split(self, method='timestamp', train_val_test_ratio=[0.7, 0.2, 0.1], random_state=42):
         """Split data into train and test using the selected method."""
         assert round(sum(train_val_test_ratio)) == 1.0, "Train, val, test ratios must sum up to 1."
 
         if method == 'timestamp':
-            return self._train_val_test_split_by_timestamp(train_val_test_ratio)
+            return self._train_val_test_split_by_timestamp(train_val_test_ratio, random_state=random_state)
         elif method == 'user':
-            return self._train_val_test_split_by_user(train_val_test_ratio)
+            return self._train_val_test_split_by_user(train_val_test_ratio, random_state=random_state)
         else:
             raise ValueError("Unknown method for train_test_split. Choose 'timestamp' or 'user'.")
 
-    def _train_val_test_split_by_timestamp(self, train_val_test_ratio):
+    def _train_val_test_split_by_timestamp(self, train_val_test_ratio, random_state=42):
         """Split by timestamp: oldest data is for training, middle data is for validation, newest data is for testing."""
         ratings_df = self.ratings_df if self.preprocessed_ratings_df is None else self.preprocessed_ratings_df
         ratings_df = ratings_df.sort_values(by=self.timestamp_col)
 
         train_ratio, val_ratio, test_ratio = train_val_test_ratio
-        train_df, test_val_df = train_test_split(ratings_df, test_size=(val_ratio+test_ratio), shuffle=False)
+        train_df, test_val_df = train_test_split(ratings_df, test_size=(val_ratio+test_ratio), random_state=random_state, shuffle=False)
 
         train_users = train_df[self.user_col].unique()
         train_items = train_df[self.item_col].unique()
@@ -90,18 +91,18 @@ class BaseDatasetPreparer(ABC):
         ]
 
         relative_test_size = test_ratio / (val_ratio + test_ratio)
-        val_df, test_df = train_test_split(test_val_df, test_size=relative_test_size, shuffle=False)
+        val_df, test_df = train_test_split(test_val_df, test_size=relative_test_size, random_state=random_state, shuffle=False)
         return train_df, val_df, test_df
 
-    def _train_val_test_split_by_user(self, train_val_test_ratio):
+    def _train_val_test_split_by_user(self, train_val_test_ratio, random_state=42):
         """Split by user: some users go into train, val, and test sets."""
         ratings_df = self.ratings_df if self.preprocessed_ratings_df is None else self.preprocessed_ratings_df
         train_ratio, val_ratio, test_ratio = train_val_test_ratio
 
         train_users, val_test_users = train_test_split(ratings_df[self.user_col].unique(), test_size=(val_ratio + test_ratio))
-
+ 
         relative_test_size = test_ratio / (val_ratio + test_ratio)
-        val_users, test_users = train_test_split(val_test_users, test_size=relative_test_size)
+        val_users, test_users = train_test_split(val_test_users, test_size=relative_test_size, random_state=random_state)
 
         train_df = ratings_df[ratings_df[self.user_col].isin(train_users)]
         val_df = ratings_df[ratings_df[self.user_col].isin(val_users)]
