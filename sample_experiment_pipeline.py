@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 from dataset_prep import get_train_val_test_from_dataset
 from sklearn.decomposition import TruncatedSVD
-from embedders import MatrixUserItemEmbedder, SASRecUserItemEmbedder
+from embedders import MatrixUserItemEmbedder
 from dataloader import TrainDataloader, TestDataloader
 from trainer import Trainer
 from evaluator import Evaluator
@@ -14,7 +14,6 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 global_epochs = 3
 embedding_vector_len = 64
 batch_size = 512
-embedder_name = 'SASRec' # ['Matrix'], add more and insert extra 'if-else' where we choose embedder
 
 trainer = Trainer(print_info_after_iters=3000, plot_losses=True)
 evaluator = Evaluator(device)
@@ -25,18 +24,11 @@ train_df, val_df, test_df = get_train_val_test_from_dataset(dataset_name='ml-1m'
                                                             train_val_test_split_method='timestamp', 
                                                             train_val_test_ratio=[0.7, 0.2, 0.1], 
                                                             random_state=42)
-
-if embedder_name == 'Matrix':
-    embedder = MatrixUserItemEmbedder(
-        algorithm_class=TruncatedSVD, 
-        algorithm_kwargs={'n_components': embedding_vector_len, 'random_state': 42}, 
-        device=device
-    )
-elif embedder_name == 'SASRec':
-    embedder = SASRecUserItemEmbedder()
-else:
-    raise ValueError('no such embedder')
-
+embedder = MatrixUserItemEmbedder(
+    algorithm_class=TruncatedSVD, 
+    algorithm_kwargs={'n_components': embedding_vector_len, 'random_state': 42}, 
+    device=device
+)
 embedder.fit(train_df, explicit=False)
 user_embeddings = embedder.user_embeddings
 item_embeddings = embedder.item_embeddings
@@ -45,25 +37,7 @@ train_loader = TrainDataloader(train_df, user_embeddings, item_embeddings, item_
 val_loader = TestDataloader(val_df, user_embeddings, item_embeddings, item_ids_whitelist=None, batch_size=batch_size, device=device)
 test_loader = TestDataloader(test_df, user_embeddings, item_embeddings, item_ids_whitelist=None, batch_size=batch_size, device=device)
 
-output_dim = 16
-num_user_encoders = 8
-num_item_encoders = 4
-logits_dim = num_user_encoders * num_item_encoders
-
-# Инициализация всех модулей
-item_embedding_encoder = EmbeddingEncoder(num_encoders=4, layer_sizes=[embedding_vector_len, 32, output_dim])
-user_embedding_encoder = EmbeddingEncoder(num_encoders=num_encoders, layer_sizes=[embedding_vector_len, 32, output_dim])
-logits_mol = LogitsMoL()
-gating_fn = MoLGatingFN(layer_sizes=[embedding_vector_len * 2 + num_user_encoders * num_item_encoders, 
-                                     output_dim * 2 + num_user_encoders * num_item_encoders, 
-                                     num_user_encoders * num_item_encoders])
-
-# Создание комбинированной модели
-model_mol = MoLCombinedModel(user_embedding_encoder, item_embedding_encoder, gating_fn, logits_mol)
-
-
-
-models = [MLP(input_dim=2 * embedding_vector_len), MLP(input_dim=2 * embedding_vector_len), MLP(input_dim=2 * embedding_vector_len), model_mol]
+models = [MLP(input_dim=2 * embedding_vector_len), MLP(input_dim=2 * embedding_vector_len), MLP(input_dim=2 * embedding_vector_len)]
 top_ks = [10000, 1000, 100]  # до скольки обрезаем айтемы после каждой модели
 assert len(models) == len(top_ks)
 
