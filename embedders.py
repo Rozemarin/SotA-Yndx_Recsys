@@ -84,7 +84,8 @@ class SASRecUserItemEmbedder(BaseEmbedder):
         # fit
         self.model, self.losses = build_sasrec_model(self.algorithm_kwargs, train_df, self.data_description)
         # item embeddings
-        self.item_embeddings = self.model.item_emb.weight.detach()  # Маша, добавь freeze/unfreeze (self.freeze_embeddings)
+        self.item_embeddings = self.model.item_emb
+        self.item_embeddings.requires_grad = False
         # user embeddings
         training_seqs = data_to_sequences(train_df, self.data_description)
         sampler = batch_generator(
