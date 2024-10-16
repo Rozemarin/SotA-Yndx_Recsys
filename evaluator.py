@@ -2,6 +2,7 @@ from typing import List, Dict, Tuple
 from dataclasses import dataclass
 import torch
 import numpy as np
+from tqdm.notebook import tqdm
 
 
 @dataclass
@@ -15,7 +16,7 @@ class Evaluator:
     def __init__(self, device: torch.device = None):
         self.device = device if device else torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    def evaluate(self, model: torch.nn.Module, dataloader, cutoffs: List[int] = [5, 10, 100, 500]) -> Tuple[List[int], EvaluationMetrics]:
+    def evaluate(self, model: torch.nn.Module, dataloader, cutoffs: List[int] = [10, 50, 200, 500]) -> Tuple[List[int], EvaluationMetrics]:
         model = model.to(self.device)
         model.eval()  # Set model to evaluation mode
 
