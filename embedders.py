@@ -71,7 +71,7 @@ class SASRecUserItemEmbedder(BaseEmbedder):
                          ),
                          device='cpu'
                 ):
-        super().__init__(algorithm_class, algorithm_kwargs, device)
+        super().__init__(algorithm_class, algorithm_kwargs, device=device)
     
     def fit(self, train_df, explicit=False):
         self.data_description = dict(
