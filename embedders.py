@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 import numpy as np
 import torch.nn as nn
 import torch
-from models.SASRec.SASRec_utils import build_sasrec_model, data_to_sequences, batch_generator
+from models import build_sasrec_model, data_to_sequences, batch_generator
 
 
 class BaseEmbedder(ABC):

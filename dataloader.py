@@ -64,7 +64,7 @@ class TrainDataloader:
             if len(negative_sampling_pool) < self.num_neg:
                 neg_item_ids = list(negative_sampling_pool)
             else:
-                neg_item_ids = random.sample(negative_sampling_pool, self.num_neg)
+                neg_item_ids = random.sample(list(negative_sampling_pool), self.num_neg)
 
             item_ids = torch.tensor([pos_item_id] + list(neg_item_ids)).to(self.device)
             item_embs = self.item_embeddings(item_ids)
