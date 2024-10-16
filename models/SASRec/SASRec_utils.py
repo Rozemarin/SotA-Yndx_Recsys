@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 from tqdm import tqdm
 
-from SASRec.SASRec_model import SASRec
+from models.SASRec.SASRec_model import SASRec
 
 
 def fix_torch_seed(seed):
