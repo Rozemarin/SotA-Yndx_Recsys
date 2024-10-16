@@ -44,7 +44,7 @@ assert len(models) == len(top_ks)
 for global_epoch in range(global_epochs):
     for j, model in enumerate(models):
         optimizer = optim.Adam(model.parameters(), lr=0.001)
-        criterion = nn.BCELoss()
+        criterion = nn.BCEWithLogitsLoss()
         
         trainer.train(
             model=model,
