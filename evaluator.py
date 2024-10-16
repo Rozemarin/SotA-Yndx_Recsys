@@ -2,6 +2,7 @@ from typing import List, Dict, Tuple
 from dataclasses import dataclass
 import torch
 import numpy as np
+import pandas as pd
 from tqdm.notebook import tqdm
 
 
@@ -9,7 +10,7 @@ from tqdm.notebook import tqdm
 class EvaluationMetrics:
     avg_hit_rates: Dict[str, float]
     avg_recall_scores: Dict[str, float]
-    avg_mrr_scores: Dict[str, float]
+    avg_mrr_score: Dict[str, float]
 
         
 class Evaluator:
@@ -63,10 +64,9 @@ class Evaluator:
         return hits / total_relevant
 
     @staticmethod
-    def mrr(recommended_items: List[int], ground_truth_items: List[int], n: int) -> float:
+    def mrr(recommended_items: List[int], ground_truth_items: List[int]) -> float:
         """Calculate Mean Reciprocal Rank at top-N recommendations for a single user."""
-        top_n_recommendations = recommended_items[:n]
-        for rank, item in enumerate(top_n_recommendations, start=1):
+        for rank, item in enumerate(recommended_items, start=1):
             if item in ground_truth_items:
                 return 1 / rank
         return 0
@@ -82,22 +82,22 @@ class Evaluator:
         """
         hit_rates = {n: [] for n in cutoffs}
         recall_scores = {n: [] for n in cutoffs}
-        mrr_scores = {n: [] for n in cutoffs}
+        mrr_scores = []
 
         # Loop through each user's recommendations and ground truth items
         for recommended_items, ground_truth_items in zip(init_recommended_items, init_ground_truth_items):
             for cutoff in cutoffs:
                 hit_rates[cutoff].append(self.hit_rate(recommended_items, ground_truth_items, cutoff))
                 recall_scores[cutoff].append(self.recall(recommended_items, ground_truth_items, cutoff))
-                mrr_scores[cutoff].append(self.mrr(recommended_items, ground_truth_items, cutoff))
+            mrr_scores.append(self.mrr(recommended_items, ground_truth_items))
 
         # Calculate the average metrics across all users
         avg_hit_rates = {f'hit_rate_at_{n}': np.mean(hit_rates[n]) for n in cutoffs}
         avg_recall_scores = {f'recall_at_{n}': np.mean(recall_scores[n]) for n in cutoffs}
-        avg_mrr_scores = {f'mrr_at_{n}': np.mean(mrr_scores[n]) for n in cutoffs}
+        avg_mrr_score = {f'mrr': np.mean(mrr_scores)}
 
         return EvaluationMetrics(
             avg_hit_rates=avg_hit_rates,
             avg_recall_scores=avg_recall_scores,
-            avg_mrr_scores=avg_mrr_scores
+            avg_mrr_score=avg_mrr_score
         )
