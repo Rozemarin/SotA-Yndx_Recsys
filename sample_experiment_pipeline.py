@@ -45,7 +45,25 @@ train_loader = TrainDataloader(train_df, user_embeddings, item_embeddings, item_
 val_loader = TestDataloader(val_df, user_embeddings, item_embeddings, item_ids_whitelist=None, batch_size=batch_size, device=device)
 test_loader = TestDataloader(test_df, user_embeddings, item_embeddings, item_ids_whitelist=None, batch_size=batch_size, device=device)
 
-models = [MLP(input_dim=2 * embedding_vector_len), MLP(input_dim=2 * embedding_vector_len), MLP(input_dim=2 * embedding_vector_len)]
+output_dim = 16
+num_user_encoders = 8
+num_item_encoders = 4
+logits_dim = num_user_encoders * num_item_encoders
+
+# Инициализация всех модулей
+item_embedding_encoder = EmbeddingEncoder(num_encoders=4, layer_sizes=[embedding_vector_len, 32, output_dim])
+user_embedding_encoder = EmbeddingEncoder(num_encoders=num_encoders, layer_sizes=[embedding_vector_len, 32, output_dim])
+logits_mol = LogitsMoL()
+gating_fn = MoLGatingFN(layer_sizes=[embedding_vector_len * 2 + num_user_encoders * num_item_encoders, 
+                                     output_dim * 2 + num_user_encoders * num_item_encoders, 
+                                     num_user_encoders * num_item_encoders])
+
+# Создание комбинированной модели
+model_mol = MoLCombinedModel(user_embedding_encoder, item_embedding_encoder, gating_fn, logits_mol)
+
+
+
+models = [MLP(input_dim=2 * embedding_vector_len), MLP(input_dim=2 * embedding_vector_len), MLP(input_dim=2 * embedding_vector_len), model_mol]
 top_ks = [10000, 1000, 100]  # до скольки обрезаем айтемы после каждой модели
 assert len(models) == len(top_ks)
 
