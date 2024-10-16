@@ -42,7 +42,7 @@ class BaseDatasetPreparer(ABC):
                 self.preprocessed_ratings_df = self.preprocessed_ratings_df.sort_values(by=[self.user_col, self.timestamp_col])
             else:
                 self.preprocessed_ratings_df = self.preprocessed_ratings_df.sort_values(by=[self.user_col])
-            self.preprocessed_ratings_df = self.preprocessed_ratings_df.groupby(self.user_col).head(max_seq_len)
+            self.preprocessed_ratings_df = self.preprocessed_ratings_df.groupby(self.user_col).tail(max_seq_len)
 
     def train_test_split(self, train_val_test_split_method='timestamp', train_val_test_ratio=[0.7, 0.2, 0.1], random_state=42):
         assert round(sum(train_val_test_ratio)) == 1.0, "Train, val, test ratios must sum up to 1."
