@@ -20,7 +20,7 @@ class FactorizationMachine(torch.nn.Module):
         return 0.5 * ix 
 
 
-class MLP(torch.nn.Module):
+class MLP_nmf(torch.nn.Module):
     def __init__(self, input_dim, mlp_dims, dropouts):
         super().__init__()
         layers = []
@@ -41,7 +41,7 @@ class NeuralFactorizationMachineModel(torch.nn.Module):
         super().__init__()
         self.fm = FactorizationMachine(reduce_sum=False)
         self.linear = torch.nn.Linear(user_embed_dim + item_embed_dim, 1)
-        self.mlp = MLP(user_embed_dim + item_embed_dim, mlp_dims, dropouts)
+        self.mlp = MLP_nmf(user_embed_dim + item_embed_dim, mlp_dims, dropouts)
 
     def forward(self, user_emb, item_emb):
         x = torch.cat([user_emb, item_emb], dim=1) 
@@ -49,7 +49,7 @@ class NeuralFactorizationMachineModel(torch.nn.Module):
         linear_output = self.linear(x) 
         # FM output
         fm_output = self.fm(x).reshape(-1, 1)
-        # MLP output
+        # MLP_nmf output
         mlp_output = self.mlp(x)  # Shape: [batch_size, 1]
         # Combine outputs
         output = linear_output + fm_output + mlp_output
