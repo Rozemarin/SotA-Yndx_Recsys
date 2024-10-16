@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 from dataset_prep import get_train_val_test_from_dataset
 from sklearn.decomposition import TruncatedSVD
-from embedders import MatrixUserItemEmbedder
+from embedders import MatrixUserItemEmbedder, SASRecUserItemEmbedder
 from dataloader import TrainDataloader, TestDataloader
 from trainer import Trainer
 from evaluator import Evaluator
@@ -14,6 +14,7 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 global_epochs = 3
 embedding_vector_len = 64
 batch_size = 512
+embedder_name = 'SASRec' # ['Matrix'], add more and insert extra 'if-else' where we choose embedder
 
 trainer = Trainer(print_info_after_iters=3000, plot_losses=True)
 evaluator = Evaluator(device)
@@ -24,11 +25,18 @@ train_df, val_df, test_df = get_train_val_test_from_dataset(dataset_name='ml-1m'
                                                             train_val_test_split_method='timestamp', 
                                                             train_val_test_ratio=[0.7, 0.2, 0.1], 
                                                             random_state=42)
-embedder = MatrixUserItemEmbedder(
-    algorithm_class=TruncatedSVD, 
-    algorithm_kwargs={'n_components': embedding_vector_len, 'random_state': 42}, 
-    device=device
-)
+
+if embedder_name == 'Matrix':
+    embedder = MatrixUserItemEmbedder(
+        algorithm_class=TruncatedSVD, 
+        algorithm_kwargs={'n_components': embedding_vector_len, 'random_state': 42}, 
+        device=device
+    )
+elif embedder_name == 'SASRec':
+    embedder = SASRecUserItemEmbedder()
+else:
+    raise ValueError('no such embedder')
+
 embedder.fit(train_df, explicit=False)
 user_embeddings = embedder.user_embeddings
 item_embeddings = embedder.item_embeddings

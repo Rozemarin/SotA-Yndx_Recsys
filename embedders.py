@@ -53,7 +53,7 @@ class MatrixUserItemEmbedder(BaseEmbedder):
         self.user_embeddings = nn.Embedding.from_pretrained(torch.tensor(latent_matrix, dtype=torch.float32), freeze=self.freeze_emebddings).to(self.device)
         self.item_embeddings = nn.Embedding.from_pretrained(torch.tensor(self.algorithm.components_.T, dtype=torch.float32), freeze=self.freeze_emebddings).to(self.device)
 
-class SASRecUserItemEmbedding(BaseEmbedder):
+class SASRecUserItemEmbedder(BaseEmbedder):
     def __init__(self, algorithm_class = None, 
                         algorithm_kwargs=
                          dict(
@@ -106,4 +106,4 @@ class SASRecUserItemEmbedding(BaseEmbedder):
                 log_feats = self.model.log2feats(seq)
                 final_feat = log_feats[:, -1, :]
                 user_embeddings = np.append(user_embeddings, final_feat, axis=0)
-        self.user_embeddings = nn.Embedding.from_pretrained(torch.tensor(init_array), freeze=self.freeze_emebddings).to(device)  # Маша, что такое init_array?
+        self.user_embeddings = nn.Embedding.from_pretrained(torch.tensor(user_embeddings), freeze=self.freeze_emebddings).to(device)
