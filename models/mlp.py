@@ -14,4 +14,4 @@ class MLP(nn.Module):
         x = torch.relu(self.fc1(x))
         x = self.dropout(x)
         x = self.fc2(x)
-        return torch.sigmoid(x)
+        return x

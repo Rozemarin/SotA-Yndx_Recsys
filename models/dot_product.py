@@ -2,9 +2,9 @@ import torch
 import torch.nn as nn
     
 
-class DotProductWithTemperature(nn.Module):
+class DotProduct(nn.Module):
     def __init__(self, temperature=20):
-        super(DotProductWithTemperature, self).__init__()
+        super(DotProduct, self).__init__()
         self.temperature = temperature
 
     def forward(self, user_emb, item_emb):
