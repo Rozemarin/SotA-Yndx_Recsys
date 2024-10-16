@@ -68,9 +68,10 @@ class SASRecUserItemEmbedder(BaseEmbedder):
                             manual_seed = 111,
                             learning_rate = 1e-3,
                             l2_emb = 0,
-                         )
+                         ),
+                         device='cpu'
                 ):
-        super().__init__(algorithm_class, algorithm_kwargs)
+        super().__init__(algorithm_class, algorithm_kwargs, device)
     
     def fit(self, train_df, explicit=False):
         self.data_description = dict(
@@ -80,7 +81,6 @@ class SASRecUserItemEmbedder(BaseEmbedder):
             n_users = len(np.unique(train_df['user_id'])),
             n_items = len(np.unique(train_df['item_id']))
         )
-        print(self.data_description)
         # fit
         self.model, self.losses = build_sasrec_model(self.algorithm_kwargs, train_df, self.data_description)
         # item embeddings
@@ -96,15 +96,11 @@ class SASRecUserItemEmbedder(BaseEmbedder):
         )
         dim = self.algorithm_kwargs['hidden_units']
         
-        device = 'cpu'
-        if torch.cuda.is_available():
-            device = torch.device(f'cuda:{torch.cuda.current_device()}')
-        
         user_embeddings_list = []
         
         for batch in sampler:
             _, *seq_data = batch
-            seq, pos = (torch.LongTensor(seq_data[i]).to(device) for i in range(len(seq_data)))
+            seq, pos = (torch.LongTensor(seq_data[i]).to(self.device) for i in range(len(seq_data)))
         
             with torch.no_grad():
                 log_feats = self.model.log2feats(seq)
@@ -113,5 +109,4 @@ class SASRecUserItemEmbedder(BaseEmbedder):
     
         user_embeddings = torch.cat(user_embeddings_list, dim=0)
         
-        self.user_embeddings = nn.Embedding.from_pretrained(user_embeddings, freeze=self.freeze_emebddings).to(device)
-
+        self.user_embeddings = nn.Embedding.from_pretrained(user_embeddings, freeze=self.freeze_emebddings).to(self.device)
