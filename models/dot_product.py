@@ -2,9 +2,11 @@ import torch
 import torch.nn as nn
     
 
-class DotProduct(nn.Module):
-    def __init__(self):
-        super(DotProduct, self).__init__()
+class DotProductWithTemperature(nn.Module):
+    def __init__(self, temperature=20):
+        super(DotProductWithTemperature, self).__init__()
+        self.temperature = temperature
 
-    def forward(self, user_emb: torch.Tensor, item_emb: torch.Tensor) -> torch.Tensor:
-        return torch.sum(user_emb * item_emb, dim=1)
+    def forward(self, user_emb, item_emb):
+        dot_product = torch.sum(user_emb * item_emb, dim=-1)
+        return dot_product / self.temperature

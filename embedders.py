@@ -7,10 +7,11 @@ from SASRec.SASRec_utils import build_sasrec_model, data_to_sequences, batch_gen
 
 
 class BaseEmbedder(ABC):
-    def __init__(self, algorithm_class, algorithm_kwargs=None, device='cpu'):
+    def __init__(self, algorithm_class, algorithm_kwargs=None, freeze_embeddings=True, device='cpu'):
         self.algorithm_class = algorithm_class
         self.algorithm_kwargs = algorithm_kwargs if algorithm_kwargs else {}
         self.algorithm = None
+        self.freeze_emebddings = freeze_embeddings
         self.device = device
         self.user_embeddings = None
         self.item_embeddings = None
@@ -49,8 +50,8 @@ class MatrixUserItemEmbedder(BaseEmbedder):
         self.algorithm = self.algorithm_class(**self.algorithm_kwargs)
 
         latent_matrix = self.algorithm.fit_transform(interaction_matrix)
-        self.user_embeddings = nn.Embedding.from_pretrained(torch.tensor(latent_matrix, dtype=torch.float32), freeze=True).to(self.device)
-        self.item_embeddings = nn.Embedding.from_pretrained(torch.tensor(self.algorithm.components_.T, dtype=torch.float32), freeze=True).to(self.device)
+        self.user_embeddings = nn.Embedding.from_pretrained(torch.tensor(latent_matrix, dtype=torch.float32), freeze=self.freeze_emebddings).to(self.device)
+        self.item_embeddings = nn.Embedding.from_pretrained(torch.tensor(self.algorithm.components_.T, dtype=torch.float32), freeze=self.freeze_emebddings).to(self.device)
 
 class SASRecUserItemEmbedding(BaseEmbedder):
     def __init__(self, algorithm_class = None, 
@@ -83,7 +84,7 @@ class SASRecUserItemEmbedding(BaseEmbedder):
         # fit
         self.model, self.losses = build_sasrec_model(self.algorithm_kwargs, train_df, self.data_description)
         # item embeddings
-        self.item_embeddings = self.model.item_emb.weight.detach()
+        self.item_embeddings = self.model.item_emb.weight.detach()  # Маша, добавь freeze/unfreeze (self.freeze_embeddings)
         # user embeddings
         training_seqs = data_to_sequences(train_df, self.data_description)
         sampler = batch_generator(
@@ -105,4 +106,4 @@ class SASRecUserItemEmbedding(BaseEmbedder):
                 log_feats = self.model.log2feats(seq)
                 final_feat = log_feats[:, -1, :]
                 user_embeddings = np.append(user_embeddings, final_feat, axis=0)
-        self.user_embeddings = nn.Embedding.from_pretrained(torch.tensor(init_array), freeze=True).to(device)  # Маша, что такое init_array?
+        self.user_embeddings = nn.Embedding.from_pretrained(torch.tensor(init_array), freeze=self.freeze_emebddings).to(device)  # Маша, что такое init_array?
