@@ -1,100 +1,107 @@
 import torch
-import pandas as pd
+import torch.nn as nn
+import torch.optim as optim
+from typing import Optional, List
 import matplotlib.pyplot as plt
-from tqdm.notebook import tqdm
+from tqdm import tqdm
 
 
 class Trainer:
-    def __init__(self, optimizer, optimizer_lr, criterion, device, log_interval=1000):
-        self.optimizer = optimizer
-        self.optimizer_lr = optimizer_lr
-        self.criterion = criterion
-        self.device = device
-        self.log_interval = log_interval
+    def __init__(self, print_info_after_iters: Optional[int] = 5000, plot_losses: bool = True, device: torch.device = None):
+        self.print_info_after_iters = print_info_after_iters
+        self.plot_losses = plot_losses
+        self.device = device if device else torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    def train(self, model, train_dataloader, epochs=1, plot_losses=True):
-        model = model.to(self.device)
-        model.train()
-
-        optimizer = self.optimizer(model.parameters(), lr=self.optimizer_lr)
-
-        train_losses = []  # List to store average loss per epoch
-        train_accuracies = []  # List to store accuracy per epoch
-        iter_losses = []  # Track losses per iteration (batch)
-        iter_accuracies = []  # Track accuracies per iteration (batch)
+    def train(self, 
+              model: nn.Module,
+              dataloader,
+              optimizer: optim.Optimizer,
+              criterion: nn.Module,
+              scheduler: Optional[optim.lr_scheduler._LRScheduler] = None,
+              epochs: int = 3) -> nn.Module:
+        
+        model.to(self.device)
+        model.train()  # Set the model to training mode
+        
+        # Store training history
+        batch_losses = []
+        batch_accuracies = []
+        iter_losses = []
+        iter_accuracies = []
 
         for epoch in range(epochs):
-            running_loss = 0.0
-            correct_predictions = 0
-            total_predictions = 0
+            print(f"Epoch {epoch+1}/{epochs}")
+            running_loss, running_corrects, total_samples = 0.0, 0, 0
 
-            progress_bar = tqdm(train_dataloader, desc=f"Epoch {epoch+1}/{epochs}")
-
-            for batch_idx, (user_id, user_embed, item_id, item_embed, labels) in enumerate(progress_bar):
-                user_embed, item_embed, labels = (user_embed.to(self.device),
-                                                  item_embed.to(self.device),
-                                                  labels.float().to(self.device))
-                optimizer.zero_grad()
+            for i, batch in enumerate(tqdm(dataloader)):
+                user_id, user_emb, item_id, item_emb, labels = batch
+                optimizer.zero_grad()  # Reset gradients
 
                 # Forward pass
-                predictions = model(user_embed, item_embed).squeeze()
-                loss = self.criterion(predictions, labels)
+                outputs = model(user_emb, item_emb)
+                loss = criterion(outputs.squeeze(), labels)
 
-                # Backward pass and optimization
+                # Backward pass and optimization step
                 loss.backward()
                 optimizer.step()
+                if scheduler:
+                    scheduler.step()
 
-                # Accumulate loss
-                running_loss += loss.item()
-                iter_losses.append(loss.item())
+                # Track statistics
+                preds = torch.round(torch.sigmoid(outputs))  # Assuming binary classification, threshold = 0.5
+                corrects = torch.sum(preds.flatten() == labels).item()
+                batch_loss = loss.item()
+                batch_accuracy = corrects / len(labels)
 
-                # Calculate accuracy (binary classification example, adjust for your use case)
-                predicted_classes = (torch.sigmoid(predictions) > 0.5).float()  # Assumes binary classification
-                correct_predictions += (predicted_classes == labels).sum().item()
-                total_predictions += labels.size(0)
-                accuracy = correct_predictions / total_predictions
+                batch_losses.append(batch_loss)
+                batch_accuracies.append(batch_accuracy)
 
-                iter_accuracies.append(accuracy)
+                running_loss += batch_loss * len(labels)
+                running_corrects += corrects
+                total_samples += len(labels)
 
-                # Update progress bar with current loss and accuracy
-                progress_bar.set_postfix(loss=loss.item(), accuracy=accuracy)
+                if self.print_info_after_iters and (i + 1) % self.print_info_after_iters == 0:
+                    avg_loss = running_loss / total_samples
+                    avg_acc = running_corrects / total_samples
+                    print(f"Iteration {i+1} | Avg Loss: {avg_loss:.4f} | Avg Accuracy: {avg_acc:.4f}")
+                    
+                    # Store info after the specified number of iterations
+                    iter_losses.append(avg_loss)
+                    iter_accuracies.append(avg_acc)
+                    running_loss, running_corrects, total_samples = 0.0, 0, 0  # Reset for the next iteration batch
 
-                # Logging every few batches
-                if (batch_idx + 1) % self.log_interval == 0:
-                    avg_loss = running_loss / self.log_interval
-                    print(f"Epoch {epoch+1}, Batch {batch_idx+1}, Avg Loss over last {self.log_interval} batches: {avg_loss:.4f}")
-                    running_loss = 0.0
+        if self.plot_losses:
+            self._plot_training_curves(batch_losses, iter_losses, batch_accuracies, iter_accuracies)
 
-            # At the end of the epoch, log the average loss and accuracy
-            avg_epoch_loss = sum(iter_losses[-len(train_dataloader):]) / len(train_dataloader)
-            train_losses.append(avg_epoch_loss)
-            epoch_accuracy = correct_predictions / total_predictions
-            train_accuracies.append(epoch_accuracy)
-            print(f"Epoch {epoch+1} completed: Avg Loss: {avg_epoch_loss:.4f}, Accuracy: {epoch_accuracy:.4f}")
+        return model
 
-        # Plot metrics if plot_losses is True
-        if plot_losses:
-            self.plot_metrics(iter_losses, train_losses, iter_accuracies, train_accuracies)
+    def _plot_training_curves(self, 
+                          batch_losses: List[float], 
+                          iter_losses: List[float], 
+                          batch_accuracies: List[float], 
+                          iter_accuracies: List[float]) -> None:
+        # Plot training losses and accuracies
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
 
-        return model, train_losses, train_accuracies
+        # Plot losses
+        ax1.plot(batch_losses, label="Batch losses", color="blue", alpha=0.5)
+        if self.print_info_after_iters:
+            ax1.plot(range(self.print_info_after_iters, len(batch_losses), self.print_info_after_iters), iter_losses, 
+                     label="Averaged losses", color="red", linewidth=2)
+        ax1.set_title("Loss during training")
+        ax1.set_xlabel("Batches")
+        ax1.set_ylabel("Loss")
+        ax1.legend()
 
-    def plot_metrics(self, iter_losses, epoch_losses, iter_accuracies, epoch_accuracies):
-        """Plots losses and accuracies side by side."""
-        fig, axs = plt.subplots(1, 2, figsize=(12, 5))
-
-        axs[0].plot(range(1, len(iter_losses) + 1), iter_losses, label='Iteration Loss', color='blue')
-        axs[0].plot(range(1, len(epoch_losses) + 1), epoch_losses, label='Epoch Loss', color='red')
-        axs[0].set_xlabel('Iterations / Epochs')
-        axs[0].set_ylabel('Loss')
-        axs[0].set_title('Training Loss Over Iterations and Epochs')
-        axs[0].legend()
-
-        axs[1].plot(range(1, len(iter_accuracies) + 1), iter_accuracies, label='Iteration Accuracy', color='blue')
-        axs[1].plot(range(1, len(epoch_accuracies) + 1), epoch_accuracies, label='Epoch Accuracy', color='red')
-        axs[1].set_xlabel('Iterations / Epochs')
-        axs[1].set_ylabel('Accuracy')
-        axs[1].set_title('Training Accuracy Over Iterations and Epochs')
-        axs[1].legend()
+        # Plot accuracies
+        ax2.plot(batch_accuracies, label="Batch accuracies", color="blue", alpha=0.5)
+        if self.print_info_after_iters:
+            ax2.plot(range(self.print_info_after_iters, len(batch_accuracies), self.print_info_after_iters), iter_accuracies, 
+                     label="Averaged accuracies", color="red", linewidth=2)
+        ax2.set_title("Accuracy during training")
+        ax2.set_xlabel("Batches")
+        ax2.set_ylabel("Accuracy")
+        ax2.legend()
 
         plt.tight_layout()
         plt.show()

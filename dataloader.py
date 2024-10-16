@@ -1,77 +1,157 @@
-from torch.utils.data import Dataset, DataLoader
-import numpy as np
+import torch
+import random
+import pandas as pd
+import math
 
 
-class TrainInteractionDataset(Dataset):
-    def __init__(self, df, embedder, all_items=None, num_negatives=10):
+class TrainDataloader:
+    def __init__(self, df: pd.DataFrame, user_embeddings: torch.nn.Embedding, 
+                 item_embeddings: torch.nn.Embedding, item_ids_whitelist: set[int]=None, 
+                 batch_size: int=64, num_neg: int=100, exclude_seen: bool=True, device: str='cpu'):
         self.df = df
-        self.embedder = embedder
-        self.num_negatives = num_negatives
-        self.user_pos_items = self.df.groupby('user_id')['item_id'].apply(set).to_dict()
-        self.all_items = all_items if all_items else set(self.df['item_id'].unique())
+        self.user_embeddings = user_embeddings
+        self.item_embeddings = item_embeddings
+        self.item_ids_whitelist = item_ids_whitelist if item_ids_whitelist is not None else set(range(item_embeddings.num_embeddings))
+        self.batch_size = batch_size
+        self.num_neg = num_neg
+        self.exclude_seen = exclude_seen
+        self.device = device
+        self.user_item_interactions = self._build_user_item_interactions() if exclude_seen else None
+        self.reset_iterator()
+
+    def _build_user_item_interactions(self):
+        user_item_dict = {}
+        for _, row in self.df.iterrows():
+            user_item_dict.setdefault(row.user_id, set()).add(row.item_id)
+        return user_item_dict
+
+    def reset_iterator(self):
+        self.current_index = 0
 
     def __len__(self):
-        return len(self.df) * (1 + self.num_negatives)  # Общее количество примеров
+        # Calculate the total number of interactions and divide by batch size
+        total_interactions = len(self.df) * (1 + self.num_neg)  # 1 positive + num_neg negatives per user
+        return math.ceil(total_interactions / self.batch_size)
 
-    def _sample_negatives(self, user_id):
-        pos_items = self.user_pos_items[user_id]
-        neg_items = list(self.all_items - pos_items)
-        neg_samples = np.random.choice(neg_items, size=self.num_negatives, replace=False)
-        return neg_samples
-
-    def __getitem__(self, idx):
-        # Вычисляем индекс пользователя и типа взаимодействия
-        user_index = idx // (1 + self.num_negatives)
-        is_positive = idx % (1 + self.num_negatives) == 0
-
-        user_id, pos_item_id = self.df.iloc[user_index][['user_id', 'item_id']].values
-
-        if is_positive:
-            # Положительный пример
-            label = 1
-            item_id = pos_item_id
+    def update_whitelist(self, new_whitelist: set[int]):
+        if new_whitelist is None:
+            self.item_ids_whitelist = set(range(item_embeddings.num_embeddings))
         else:
-            # Отрицательный пример
-            label = 0
-            neg_item_ids = self._sample_negatives(user_id)
-            item_id = neg_item_ids[idx % (1 + self.num_negatives) - 1]
+            self.item_ids_whitelist = new_whitelist
+        self.reset_iterator()
 
-        user_embed = self.embedder.get_user_embeddings([user_id]).astype(np.float32).flatten()  # Shape: (embed_size,)
-        item_embed = self.embedder.get_item_embeddings([item_id]).astype(np.float32).flatten()  # Shape: (embed_size,)
+    def __iter__(self):
+        self.reset_iterator()  # Reset at the start of each new iteration
+        batch = [[], [], [], [], []]
+        len_batch = 0
 
-        return user_id, user_embed, item_id, item_embed, label
+        for i, row in self.df.iterrows():
+            if row.item_id not in self.item_ids_whitelist:
+                continue
+
+            user_id = torch.tensor(row.user_id).to(self.device)
+            user_emb = self.user_embeddings(user_id)
+
+            pos_item_id = row.item_id
+
+            if self.exclude_seen:
+                interacted_items = self.user_item_interactions[row.user_id]
+                # Exclude already seen items from the whitelist for negative sampling
+                negative_sampling_pool = self.item_ids_whitelist - interacted_items
+            else:
+                negative_sampling_pool = self.item_ids_whitelist
+
+            if len(negative_sampling_pool) < self.num_neg:
+                neg_item_ids = list(negative_sampling_pool)
+            else:
+                neg_item_ids = random.sample(negative_sampling_pool, self.num_neg)
+
+            item_ids = torch.tensor([pos_item_id] + list(neg_item_ids)).to(self.device)
+            item_embs = self.item_embeddings(item_ids)
+
+            labels = torch.tensor([1] + [0] * self.num_neg, dtype=torch.float32).to(self.device)
+
+            for j, label in enumerate(labels):
+                batch[0].append(user_id)
+                batch[1].append(user_emb)
+                batch[2].append(item_ids[j])
+                batch[3].append(item_embs[j])
+                batch[4].append(label)
+                len_batch += 1
+
+                if len_batch == self.batch_size:
+                    yield (torch.stack(batch[0]),
+                           torch.stack(batch[1]),
+                           torch.stack(batch[2]),
+                           torch.stack(batch[3]),
+                           torch.stack(batch[4]))
+                    batch = [[], [], [], [], []]
+                    len_batch = 0
+
+        if len_batch > 0:
+            yield (torch.stack(batch[0]),
+                   torch.stack(batch[1]),
+                   torch.stack(batch[2]),
+                   torch.stack(batch[3]),
+                   torch.stack(batch[4]))
 
 
-class TestInteractionDataset(Dataset):
-    def __init__(self, df, embedder, user_ids, item_ids):
+class TestDataloader:
+    def __init__(self, df: pd.DataFrame, user_embeddings: torch.nn.Embedding, 
+                 item_embeddings: torch.nn.Embedding, item_ids_whitelist: set[int]=None, 
+                 batch_size: int=64, device: str='cpu'):
         self.df = df
-        self.embedder = embedder
-        self.user_ids = user_ids
-        self.item_ids = item_ids
+        self.user_embeddings = user_embeddings
+        self.item_embeddings = item_embeddings
+        self.item_ids_whitelist = item_ids_whitelist if item_ids_whitelist is not None else set(range(item_embeddings.num_embeddings))
+        self.batch_size = batch_size
+        self.device = device
+        self.reset_iterator()
 
-        self.pairs = [(user_id, item_id) for user_id in self.user_ids for item_id in self.item_ids]
-        self.interactions = {(row['user_id'], row['item_id']): row['rating'] for _, row in df.iterrows()}
+    def reset_iterator(self):
+        self.current_index = 0
 
     def __len__(self):
-        return len(self.pairs)
+        # Calculate the total number of interactions and divide by batch size
+        total_interactions = len(self.df[['user_id']].drop_duplicates()) * len(self.item_ids_whitelist)  # all items for each user
+        return math.ceil(total_interactions / self.batch_size)
 
-    def __getitem__(self, idx):
-        user_id, item_id = self.pairs[idx]
+    def update_whitelist(self, new_whitelist: set[int]):
+        if new_whitelist is None:
+            self.item_ids_whitelist = set(range(item_embeddings.num_embeddings))
+        else:
+            self.item_ids_whitelist = new_whitelist
+        self.reset_iterator()
 
-        user_embed = self.embedder.get_user_embeddings([user_id]).astype(np.float32).flatten()  # Shape: (embed_size,)
-        item_embed = self.embedder.get_item_embeddings([item_id]).astype(np.float32).flatten()  # Shape: (embed_size,)
+    def __iter__(self):
+        self.reset_iterator()  # Reset at the start of each new iteration
+        batch = [[], [], [], []]
+        len_batch = 0
 
-        label = self.interactions.get((user_id, item_id), 0)
+        for i, row in self.df[['user_id']].drop_duplicates().iterrows():
+            user_id = torch.tensor(row.user_id).to(self.device)
+            user_emb = self.user_embeddings(user_id)
+            item_ids = torch.tensor(list(self.item_ids_whitelist), dtype=torch.int32).to(self.device)
+            item_embs = self.item_embeddings(item_ids)
 
-        return user_id, user_embed, item_id, item_embed, label
+            for j, item_id in enumerate(item_ids):
+                batch[0].append(user_id)
+                batch[1].append(user_emb)
+                batch[2].append(item_id)
+                batch[3].append(item_embs[j])
+                len_batch += 1
 
+                if len_batch == self.batch_size:
+                    # print(batch)
+                    yield (torch.stack(batch[0]),
+                           torch.stack(batch[1]),
+                           torch.stack(batch[2]),
+                           torch.stack(batch[3]))
+                    batch = [[], [], [], []]
+                    len_batch = 0
 
-
-def create_train_dataloader(df, embedder, num_negatives=10, batch_size=32):
-    dataset = TrainInteractionDataset(df, embedder, num_negatives=num_negatives)
-    return DataLoader(dataset, batch_size=batch_size, shuffle=True)
-
-
-def create_test_dataloader(df, embedder, user_ids, item_ids, batch_size=32):
-    dataset = TestInteractionDataset(df, embedder, user_ids, item_ids)
-    return DataLoader(dataset, batch_size=batch_size, shuffle=False)
+        if len_batch > 0:
+            yield (torch.stack(batch[0]),
+                   torch.stack(batch[1]),
+                   torch.stack(batch[2]),
+                   torch.stack(batch[3]))
