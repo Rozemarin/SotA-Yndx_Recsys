@@ -7,13 +7,15 @@ from embedders import MatrixUserItemEmbedder
 from dataloader import TrainDataloader, TestDataloader
 from trainer import Trainer
 from evaluator import Evaluator
-from models import MLP
+from models.fm import FactorizationMachineModel
+from models.neumf import NeuralFactorizationMachineModel
+from models.mlp import MLP
 
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-global_epochs = 3
+global_epochs = 5
 embedding_vector_len = 64
-batch_size = 512
+batch_size = 128
 
 trainer = Trainer(print_info_after_iters=3000, plot_losses=True)
 evaluator = Evaluator(device)
@@ -33,41 +35,79 @@ embedder.fit(train_df, explicit=False)
 user_embeddings = embedder.user_embeddings
 item_embeddings = embedder.item_embeddings
 
-train_loader = TrainDataloader(train_df, user_embeddings, item_embeddings, item_ids_whitelist=None, batch_size=batch_size, num_neg=100, device=device)
-val_loader = TestDataloader(val_df, user_embeddings, item_embeddings, item_ids_whitelist=None, batch_size=batch_size, device=device)
-test_loader = TestDataloader(test_df, user_embeddings, item_embeddings, item_ids_whitelist=None, batch_size=batch_size, device=device)
+train_loader = TrainDataloader(train_df, user_embeddings, item_embeddings, item_ids_whitelist=None, batch_size=batch_size, num_neg=127, device=device)
+train_loader_for_metrics = TestDataloader(train_df, user_embeddings, item_embeddings, item_ids_whitelist=None, batch_size=batch_size, device=device)
+val_loader_for_metrics = TestDataloader(val_df, user_embeddings, item_embeddings, item_ids_whitelist=None, batch_size=batch_size, device=device)
+test_loader_for_metrics = TestDataloader(test_df, user_embeddings, item_embeddings, item_ids_whitelist=None, batch_size=batch_size, device=device)
 
-models = [MLP(input_dim=2 * embedding_vector_len), MLP(input_dim=2 * embedding_vector_len), MLP(input_dim=2 * embedding_vector_len)]
-top_ks = [10000, 1000, 100]  # до скольки обрезаем айтемы после каждой модели
-assert len(models) == len(top_ks)
+print('----------SVD+FactorizationMachineModel(embedding_vector_len, embedding_vector_len)+BCEWL----------')
 
+model = FactorizationMachineModel(embedding_vector_len, embedding_vector_len)
 for global_epoch in range(global_epochs):
-    for j, model in enumerate(models):
-        optimizer = optim.Adam(model.parameters(), lr=0.001)
-        criterion = nn.BCEWithLogitsLoss()
-        
-        trainer.train(
-            model=model,
-            dataloader=train_loader,
-            optimizer=optimizer,
-            criterion=criterion,
-            epochs=1
-        )
-        
-        recs, metrics = evaluator.evaluate(model, val_loader)
-        print(f'Global epoch {global_epoch+1}/{global_epochs}, model {j+1}/{len(models)} (val):', metrics, '\n')
-        
-        items = set()
-        for lst in recs:
-            items.update(lst[:top_ks[j]])
-        
-        train_loader.update_whitelist(items)
-        val_loader.update_whitelist(items)
-        test_loader.update_whitelist(items)
-        
-    train_loader.update_whitelist(None)
-    val_loader.update_whitelist(None)
-    test_loader.update_whitelist(None)
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    criterion = nn.BCEWithLogitsLoss()
     
-recs, metrics = evaluator.evaluate(models[-1], test_loader)
+    trainer.train(
+        model=model,
+        dataloader=train_loader,
+        optimizer=optimizer,
+        criterion=criterion,
+        epochs=1
+    )
+    
+    recs, metrics = evaluator.evaluate(model, train_loader_for_metrics)
+    print(f'Global epoch {global_epoch+1}/{global_epochs} Train:', metrics, '\n')
+    
+    recs, metrics = evaluator.evaluate(model, val_loader_for_metrics)
+    print(f'Global epoch {global_epoch+1}/{global_epochs} Validation:', metrics, '\n')
+    
+recs, metrics = evaluator.evaluate(model, test_loader_for_metrics)
+print(f'Test:', metrics) 
+
+print('----------SVD+NeuralFactorizationMachineModel(embedding_vector_len, embedding_vector_len, mlp_dims=(256, 64), dropouts=(0.1, 0.1))+BCEWL----------')
+
+model = NeuralFactorizationMachineModel(embedding_vector_len, embedding_vector_len, mlp_dims=(256, 64), dropouts=(0.1, 0.1)) 
+for global_epoch in range(global_epochs):
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    criterion = nn.BCEWithLogitsLoss()
+    
+    trainer.train(
+        model=model,
+        dataloader=train_loader,
+        optimizer=optimizer,
+        criterion=criterion,
+        epochs=1
+    )
+    
+    recs, metrics = evaluator.evaluate(model, train_loader_for_metrics)
+    print(f'Global epoch {global_epoch+1}/{global_epochs} Train:', metrics, '\n')
+    
+    recs, metrics = evaluator.evaluate(model, val_loader_for_metrics)
+    print(f'Global epoch {global_epoch+1}/{global_epochs} Validation:', metrics, '\n')
+    
+recs, metrics = evaluator.evaluate(model, test_loader_for_metrics)
+print(f'Test:', metrics) 
+
+print('----------SVD+MLP(input_dim=embedding_vector_len*2, embed_dims=[512], dropout=0.1)+BCEWL----------')
+
+model = MLP(input_dim=embedding_vector_len*2, embed_dims=[512], dropout=0.1)
+for global_epoch in range(global_epochs):
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    criterion = nn.BCEWithLogitsLoss()
+    
+    trainer.train(
+        model=model,
+        dataloader=train_loader,
+        optimizer=optimizer,
+        criterion=criterion,
+        epochs=1
+    )
+    
+    recs, metrics = evaluator.evaluate(model, train_loader_for_metrics)
+    print(f'Global epoch {global_epoch+1}/{global_epochs} Train:', metrics, '\n')
+    
+    recs, metrics = evaluator.evaluate(model, val_loader_for_metrics)
+    print(f'Global epoch {global_epoch+1}/{global_epochs} Validation:', metrics, '\n')
+    
+recs, metrics = evaluator.evaluate(model, test_loader_for_metrics)
 print(f'Test:', metrics) 
