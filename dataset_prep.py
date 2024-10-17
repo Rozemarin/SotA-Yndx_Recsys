@@ -193,7 +193,7 @@ class PrepareAmazon(BaseDatasetPreparer):
 def get_train_val_test_from_dataset(dataset_name='ml-1m', pcore=5, max_seq_len=200, train_val_test_split_method='timestamp', train_val_test_ratio=[0.7, 0.2, 0.1], random_state=42):
     # Все итоговые датасеты вида [user_id: int, item_id: int, rating: int from 1 to 5, timestamp: int] 
     # Из val_df и test_df после создания выбрасываются все пользовтаели и айтемы, которые не вошли в train_df
-    if dataset_name in ['ml-1m', 'ml-2m']:
+    if dataset_name in ['ml-1m', 'ml-20m']:
         prep = PrepareMovielens(dataset='ml-1m')
     elif dataset_name in ['Books', 'Video_Games', 'Beauty']:
         prep = PrepareAmazon(dataset_name)
